@@ -1,0 +1,11 @@
+2025-09-15 10:00:17 - INFO - Configuration loaded and logger initialized.
+2025-09-15 10:00:17 - INFO - Initializing the simulation environment and agent...
+2025-09-15 10:00:17 - INFO - Simulator initialized successfully.
+2025-09-15 10:00:17 - INFO - Starting simulation for 5000 episodes.
+2025-09-15 10:00:33 - INFO - Simulation finished.
+2025-09-15 10:00:34 - INFO - Results will be saved in: results\run_2025-09-15_10-00-34
+2025-09-15 10:00:37 - INFO - Performance data saved to results\run_2025-09-15_10-00-34\performance_data.csv
+2025-09-15 10:00:37 - INFO - Q-table saved to results\run_2025-09-15_10-00-34\q_table.npy
+2025-09-15 10:00:37 - INFO - Generating reports in directory: results\run_2025-09-15_10-00-34
+2025-09-15 10:00:39 - INFO - All reports generated successfully.
+2025-09-15 10:00:39 - INFO - Project execution finished.

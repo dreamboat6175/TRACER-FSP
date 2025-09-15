@@ -1,0 +1,4 @@
+2025-09-15 09:55:13 - INFO - Configuration loaded and logger initialized.
+2025-09-15 09:55:13 - INFO - Initializing the simulation environment and agent...
+2025-09-15 09:55:13 - INFO - Simulator initialized successfully.
+2025-09-15 09:55:13 - INFO - Starting simulation for 5000 episodes.

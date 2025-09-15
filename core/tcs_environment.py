@@ -1,143 +1,256 @@
+# core/enhanced_tcs_environment.py
 import numpy as np
 import random
-import collections
+from collections import defaultdict
 
 
-class TrainControlEnvironment:
+class IntelligentAttacker:
     """
-    Simulates the Train Control System (TCS) environment.
-    It defines the system state, executes actions from players,
-    and determines the fundamental outcome of their interaction (e.g., TP, FN, FP, TN).
+    Intelligent attacker that learns and adapts strategies based on defender behavior.
     """
 
     def __init__(self, config):
-        """
-        Initializes the environment using the provided configuration.
-        :param config: A SimpleNamespace object containing all simulation parameters.
-        """
         self.config = config
-        self.gs = config.game_setup  # Shortcut for game setup parameters
-        # The state is defined by the defender's current resource allocation.
-        # It's a one-hot vector representing the active defense measure.
-        self.state = np.zeros(self.gs.num_defender_actions)
+        self.num_actions = config.game_setup.num_attacker_actions
 
-    def step(self, attacker_action_idx, defender_action_idx):
-        """
-        Executes one simulation step.
-        :param attacker_action_idx: The index of the action chosen by the attacker.
-        :param defender_action_idx: The index of the action chosen by the defender.
-        :return: A tuple containing the outcome string and the next state.
-        """
-        is_attack = attacker_action_idx is not None
-        outcome = None
+        # Strategy learning components
+        self.success_history = defaultdict(list)
+        self.defender_pattern_memory = defaultdict(int)
+        self.attack_success_rate = defaultdict(float)
 
-        if is_attack:
-            # If there is an attack, determine if it was detected (True Positive) or missed (False Negative).
-            detection_prob = self.config.model_params.detection_probability[attacker_action_idx, defender_action_idx]
-            if random.random() < detection_prob:
-                outcome = "TP"  # True Positive
+        # Adaptive parameters
+        self.exploration_rate = 0.3
+        self.learning_rate = 0.1
+        self.memory_window = 100
+
+    def observe_defender_action(self, defender_action, outcome):
+        """Observe and learn from defender actions and outcomes."""
+        self.defender_pattern_memory[defender_action] += 1
+
+        # Update success rates for different attack-defense combinations
+        if outcome in ['FN']:  # Successful attack
+            self.attack_success_rate[defender_action] = (
+                    self.attack_success_rate[defender_action] * 0.9 + 0.1 * 1.0)
+        elif outcome in ['TP']:  # Failed attack
+            self.attack_success_rate[defender_action] = (
+                    self.attack_success_rate[defender_action] * 0.9 + 0.1 * 0.0)
+
+    def choose_attack_strategy(self, episode, recent_defender_actions):
+        """
+        Choose attack strategy based on learned defender patterns.
+        """
+        # Exploration vs exploitation
+        if random.random() < self.exploration_rate:
+            # Explore: random attack or no attack
+            if random.random() < 0.7:  # 70% chance to attack when exploring
+                return random.randint(0, self.num_actions - 1)
             else:
-                outcome = "FN"  # False Negative
+                return None
+
+        # Exploitation: attack the most vulnerable defended asset
+        if not recent_defender_actions:
+            return random.randint(0, self.num_actions - 1) if random.random() < 0.5 else None
+
+        # Analyze recent defender patterns
+        defender_freq = defaultdict(int)
+        for action in recent_defender_actions[-self.memory_window:]:
+            defender_freq[action] += 1
+
+        # Find most frequently defended asset
+        most_defended = max(defender_freq, key=defender_freq.get)
+
+        # Choose attack that exploits this defense pattern
+        # Prefer attacks on less defended assets
+        asset_defense_levels = defaultdict(int)
+        for def_action in recent_defender_actions[-20:]:  # Recent 20 actions
+            asset_idx = def_action // self.config.game_setup.defender_actions_per_asset
+            asset_defense_levels[asset_idx] += 1
+
+        # Attack the least defended asset
+        if asset_defense_levels:
+            least_defended_asset = min(asset_defense_levels, key=asset_defense_levels.get)
+            # Choose a random attack type for that asset
+            attack_actions_for_asset = [
+                i for i in range(self.num_actions)
+                if i // self.config.game_setup.attacker_actions_per_asset == least_defended_asset
+            ]
+            return random.choice(attack_actions_for_asset)
         else:
-            # If there is no attack, determine if a false alarm was generated (False Positive) or not (True Negative).
-            if random.random() < self.config.model_params.false_alarm_probability[defender_action_idx]:
-                outcome = "FP"  # False Positive
-            else:
-                outcome = "TN"  # True Negative
+            return random.randint(0, self.num_actions - 1)
 
-        # Update the state to reflect the new defense deployment.
+
+class EnhancedTrainControlEnvironment:
+    """
+    Enhanced environment with intelligent attacker and comprehensive state modeling.
+    """
+
+    def __init__(self, config):
+        self.config = config
+        self.gs = config.game_setup
+
+        # Initialize intelligent attacker
+        self.attacker = IntelligentAttacker(config)
+
+        # Enhanced state representation
+        self.state = np.zeros(self.gs.num_defender_actions)
+        self.system_health = 1.0
+        self.recent_attacks = []
+        self.performance_metrics = {
+            'total_attacks': 0,
+            'successful_attacks': 0,
+            'false_alarms': 0,
+            'detection_rate': 0.0
+        }
+
+        # Track action history for intelligent attacker
+        self.defender_action_history = []
+
+    def reset(self):
+        """Reset environment to initial state."""
+        self.state = np.zeros(self.gs.num_defender_actions)
+        self.state[0] = 1  # Default to first defense strategy
+        return self.state.copy()
+
+    def step(self, defender_action_idx):
+        """
+        Enhanced step function with intelligent attacker and comprehensive metrics.
+        """
+        # Store defender action for attacker learning
+        self.defender_action_history.append(defender_action_idx)
+
+        # Intelligent attacker decision
+        attacker_action_idx = self.attacker.choose_attack_strategy(
+            len(self.defender_action_history), self.defender_action_history)
+
+        # Determine outcome
+        is_attack = attacker_action_idx is not None
+        outcome = self._determine_outcome(attacker_action_idx, defender_action_idx)
+
+        # Let attacker learn from the outcome
+        if is_attack:
+            self.attacker.observe_defender_action(defender_action_idx, outcome)
+
+        # Update system state and metrics
+        self._update_system_metrics(outcome, is_attack)
+
+        # Update defender state
         next_state = np.zeros_like(self.state)
         next_state[defender_action_idx] = 1
         self.state = next_state
 
-        return outcome, self.state
+        # Calculate comprehensive reward
+        reward_info = self._calculate_comprehensive_reward(
+            outcome, attacker_action_idx, defender_action_idx)
 
+        return self.state.copy(), reward_info, False
 
-class RewardCalculator:
-    """
-    Encapsulates the complex reward function logic as defined in the research paper.
-    This includes calculating payoffs, external rewards, intrinsic rewards, and shaping rewards.
-    """
-
-    def __init__(self, config):
-        self.config = config
-        self.previous_risk = 0  # Stores Risk(t-1) to calculate R_ext
-
-    def _calculate_cyber_physical_risk(self, state, attacker_action_idx=None):
-        """Calculates the Cyber-Physical Risk: Risk(t) = Likelihood(t) * Impact(t)"""
+    def _determine_outcome(self, attacker_action_idx, defender_action_idx):
+        """Enhanced outcome determination with dynamic probabilities."""
         if attacker_action_idx is None:
-            return 0  # No attack, no immediate risk
+            # No attack scenario
+            base_fa_prob = self.config.model_params.false_alarm_probability[defender_action_idx]
 
-        defender_action_idx = np.argmax(state)
+            # Adjust false alarm probability based on system stress
+            stress_factor = 1.0 - self.system_health
+            adjusted_fa_prob = base_fa_prob * (1 + stress_factor)
 
-        base_likelihood = self.config.risk_params.base_attack_likelihood[attacker_action_idx]
-        defense_effectiveness = self.config.risk_params.defense_effectiveness[defender_action_idx]
-        current_likelihood = base_likelihood * (1 - defense_effectiveness)
-        impact = self.config.risk_params.attack_impact[attacker_action_idx]
+            if random.random() < adjusted_fa_prob:
+                return "FP"  # False Positive
+            else:
+                return "TN"  # True Negative
+        else:
+            # Attack scenario
+            base_detection_prob = self.config.model_params.detection_probability[
+                attacker_action_idx][defender_action_idx]
 
-        return current_likelihood * impact
+            # Adjust detection probability based on recent performance
+            performance_factor = self.performance_metrics['detection_rate']
+            adjusted_detection_prob = base_detection_prob * (0.8 + 0.4 * performance_factor)
+            adjusted_detection_prob = max(0.1, min(0.95, adjusted_detection_prob))
 
-    def calculate_external_reward(self, current_state, attacker_action_idx):
-        """R_ext(t) = -(Risk(t) - Risk(t-1))"""
-        current_risk = self._calculate_cyber_physical_risk(current_state, attacker_action_idx)
-        r_ext = -(current_risk - self.previous_risk)
-        self.previous_risk = current_risk  # Update risk for the next timestep
-        return r_ext
+            if random.random() < adjusted_detection_prob:
+                return "TP"  # True Positive
+            else:
+                return "FN"  # False Negative
 
-    def calculate_intrinsic_reward(self, state, action, next_state):
-        """R_int(t): Simplified simulation of the Intrinsic Curiosity Module (ICM)."""
-        # This is a proxy for a full neural network-based ICM.
-        # It encourages exploration by rewarding actions that are chosen less frequently.
-        if not hasattr(self, 'action_counts'):
-            self.action_counts = collections.defaultdict(int)
+    def _update_system_metrics(self, outcome, is_attack):
+        """Update comprehensive system performance metrics."""
+        if is_attack:
+            self.performance_metrics['total_attacks'] += 1
+            if outcome == "FN":
+                self.performance_metrics['successful_attacks'] += 1
+                self.system_health = max(0.0, self.system_health - 0.05)
+            elif outcome == "TP":
+                self.system_health = min(1.0, self.system_health + 0.01)
 
-        defender_action_idx = np.argmax(state)
-        self.action_counts[defender_action_idx] += 1
-        return 1.0 / self.action_counts[defender_action_idx]
+        if outcome == "FP":
+            self.performance_metrics['false_alarms'] += 1
+            self.system_health = max(0.0, self.system_health - 0.01)
 
-    def _potential_function(self, state):
-        """Φ(s): Potential function for reward shaping based on expert knowledge."""
-        gs = self.config.game_setup
-        defender_action_idx = np.argmax(state)
-        # Determine which asset is being defended
-        asset_idx = defender_action_idx // gs.defender_actions_per_asset
-        # Determine the level of defense on that asset
-        defense_level = defender_action_idx % gs.defender_actions_per_asset
-        # Get the asset's criticality weight from expert knowledge
-        criticality_weight = self.config.shaping_params.asset_criticality_weights[asset_idx]
+        # Update detection rate
+        total_attacks = self.performance_metrics['total_attacks']
+        if total_attacks > 0:
+            successful_detections = total_attacks - self.performance_metrics['successful_attacks']
+            self.performance_metrics['detection_rate'] = successful_detections / total_attacks
 
-        # Potential is higher for stronger defenses on more critical assets
-        return criticality_weight * defense_level
+        # Track recent attacks for pattern analysis
+        if is_attack:
+            self.recent_attacks.append(outcome)
+            if len(self.recent_attacks) > 50:
+                self.recent_attacks.pop(0)
 
-    def calculate_shaping_reward(self, prev_state, current_state):
-        """R_shape(st, st+1) = γ * Φ(st+1) - Φ(st)"""
-        potential_current = self._potential_function(current_state)
-        potential_prev = self._potential_function(prev_state)
-        return self.config.simulation.discount_factor * potential_current - potential_prev
+    def _calculate_comprehensive_reward(self, outcome, attacker_action_idx, defender_action_idx):
+        """Calculate comprehensive reward incorporating multiple factors."""
+        from core.tcs_environment import RewardCalculator
 
-    def get_payoffs(self, outcome, attacker_action_idx, defender_action_idx):
-        """Calculates the fundamental payoffs for both players based on the game outcome."""
-        gs = self.config.game_setup
-        ep = self.config.economic_params
+        reward_calc = RewardCalculator(self.config)
 
-        attack_cost = ep.attack_costs[attacker_action_idx] if attacker_action_idx is not None else 0
-        defense_cost = ep.defense_costs[defender_action_idx]
+        # Basic payoffs
+        attacker_payoff, defender_payoff = reward_calc.get_payoffs(
+            outcome, attacker_action_idx, defender_action_idx)
 
-        asset_idx = attacker_action_idx // gs.attacker_actions_per_asset if attacker_action_idx is not None else -1
-        security_value = ep.asset_values[asset_idx] if asset_idx != -1 else 0
+        # Performance-based modifiers
+        performance_bonus = self._calculate_performance_bonus(outcome)
+        system_health_penalty = (1.0 - self.system_health) * -10
 
-        attacker_payoff, defender_payoff = 0, 0
+        # Adaptivity bonus - reward for handling diverse attacks
+        adaptivity_bonus = self._calculate_adaptivity_bonus()
 
-        if outcome == "FN":  # Missed attack
-            attacker_payoff = security_value - attack_cost
-            defender_payoff = -security_value - defense_cost
-        elif outcome == "FP":  # False alarm
-            defender_payoff = -ep.investigation_cost - defense_cost
-        elif outcome == "TP":  # Detected attack
-            attacker_payoff = -attack_cost
-            defender_payoff = -defense_cost
-        elif outcome == "TN":  # Normal operation
-            defender_payoff = -defense_cost
+        total_reward = defender_payoff + performance_bonus + system_health_penalty + adaptivity_bonus
 
-        return attacker_payoff, defender_payoff
+        return {
+            'total_reward': total_reward,
+            'base_payoff': defender_payoff,
+            'performance_bonus': performance_bonus,
+            'health_penalty': system_health_penalty,
+            'adaptivity_bonus': adaptivity_bonus,
+            'outcome': outcome,
+            'attacker_action': attacker_action_idx,
+            'system_health': self.system_health,
+            'detection_rate': self.performance_metrics['detection_rate']
+        }
 
+    def _calculate_performance_bonus(self, outcome):
+        """Calculate performance-based reward bonus."""
+        if outcome == "TP":
+            return 5  # Successful detection
+        elif outcome == "TN":
+            return 1  # Normal operation
+        elif outcome == "FN":
+            return -10  # Missed attack (severe penalty)
+        elif outcome == "FP":
+            return -3  # False alarm (moderate penalty)
+        return 0
+
+    def _calculate_adaptivity_bonus(self):
+        """Reward adaptive behavior against diverse attack patterns."""
+        if len(self.defender_action_history) < 20:
+            return 0
+
+        recent_actions = self.defender_action_history[-20:]
+        unique_actions = len(set(recent_actions))
+        max_unique = min(20, self.gs.num_defender_actions)
+
+        # Bonus for using diverse defense strategies
+        diversity_ratio = unique_actions / max_unique
+        return diversity_ratio * 2
