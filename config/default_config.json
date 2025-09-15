@@ -1,0 +1,50 @@
+{
+  "simulation": {
+    "num_episodes": 5000,
+    "max_steps_per_episode": 100,
+    "discount_factor": 0.95
+  },
+  "agent_params": {
+    "learning_rate": 0.1,
+    "exploration_rate": 1.0,
+    "min_exploration_rate": 0.01,
+    "exploration_decay_rate": 0.9995
+  },
+  "game_setup": {
+    "num_assets": 3,
+    "defender_actions_per_asset": 2,
+    "attacker_actions_per_asset": 2,
+    "num_defender_actions": 6,
+    "num_attacker_actions": 6
+  },
+  "economic_params": {
+    "asset_values": [100, 200, 500],
+    "attack_costs": [10, 15, 12, 18, 25, 30],
+    "defense_costs": [5, 10, 8, 15, 20, 40],
+    "investigation_cost": 5
+  },
+  "model_params": {
+    "detection_probability": [
+      [0.8, 0.4, 0.3, 0.2, 0.1, 0.1],
+      [0.9, 0.5, 0.4, 0.2, 0.1, 0.1],
+      [0.3, 0.2, 0.8, 0.4, 0.2, 0.1],
+      [0.4, 0.2, 0.9, 0.5, 0.2, 0.1],
+      [0.1, 0.1, 0.2, 0.1, 0.9, 0.6],
+      [0.2, 0.1, 0.3, 0.1, 0.95, 0.7]
+    ],
+    "false_alarm_probability": [0.05, 0.1, 0.05, 0.1, 0.05, 0.1]
+  },
+  "risk_params": {
+    "base_attack_likelihood": [0.3, 0.4, 0.3, 0.4, 0.6, 0.7],
+    "defense_effectiveness": [0.4, 0.8, 0.4, 0.8, 0.5, 0.9],
+    "attack_impact": [50, 60, 150, 180, 400, 450]
+  },
+  "shaping_params": {
+    "asset_criticality_weights": [0.2, 0.5, 1.0]
+  },
+  "reward_weights": {
+    "beta_ext": 1.0,
+    "beta_int": 0.1
+  }
+}
+
