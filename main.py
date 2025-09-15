@@ -2,7 +2,7 @@
 import json
 from types import SimpleNamespace
 from utils.logger import setup_logger
-from utils.data_manager import save_results
+from utils.data_manager import save_enhanced_results  # Corrected import
 from core.fsp_simulator import FictitiousSelfPlaySimulator  # 使用增强版本
 from visualization.report_generator import EnhancedReportGenerator
 import os
@@ -27,7 +27,8 @@ def main():
 
     # 4. 保存仿真结果
     final_q_table = simulator.defender_agent.q_table
-    save_results(results_df, final_q_table, logger)  # 移除了output_dir参数
+    # Corrected function call with all required arguments
+    save_enhanced_results(results_df, convergence_metrics, strategy_evolution, final_q_table, config, logger)
 
     # 5. 生成增强的可视化报告
     if not results_df.empty:
