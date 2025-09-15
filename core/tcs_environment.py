@@ -79,7 +79,7 @@ class IntelligentAttacker:
             return random.randint(0, self.num_actions - 1)
 
 
-class EnhancedTrainControlEnvironment:
+class TrainControlEnvironment:
     """
     Enhanced environment with intelligent attacker and comprehensive state modeling.
     """

@@ -3,7 +3,7 @@ import numpy as np
 from tqdm import tqdm
 from collections import defaultdict
 import random
-from core.tcs_environment import TrainControlEnvironment, RewardCalculator
+from core.tcs_environment import TrainControlEnvironment
 from core.performance_monitor import PerformanceMonitor
 from utils.agent_factory import create_agent
 
@@ -20,7 +20,6 @@ class FictitiousSelfPlaySimulator:
 
         # Initialize environment and reward calculator
         self.env = TrainControlEnvironment(config)
-        self.reward_calc = RewardCalculator(config)
 
         # Create defender agent
         self.defender_agent = create_agent(config, agent_type='q_learning')
@@ -91,47 +90,6 @@ class FictitiousSelfPlaySimulator:
         self.attacker_strategy_history[episode].append(attacker_action)
         self.defender_strategy_history[episode].append(defender_action)
 
-    def _calculate_adaptive_reward(self, outcome, attacker_action, defender_action,
-                                   current_state, next_state, episode):
-        """
-        Calculate comprehensive reward including FSP-specific components.
-        """
-        # Basic payoffs
-        attacker_payoff, defender_payoff = self.reward_calc.get_payoffs(
-            outcome, attacker_action, defender_action)
-
-        # External reward (risk-based)
-        ext_reward = self.reward_calc.calculate_external_reward(next_state, attacker_action)
-
-        # Intrinsic reward (exploration)
-        int_reward = self.reward_calc.calculate_intrinsic_reward(
-            current_state, defender_action, next_state)
-
-        # Shaping reward
-        shaping_reward = self.reward_calc.calculate_shaping_reward(current_state, next_state)
-
-        # FSP-specific adaptive component
-        strategy_diversity_bonus = self._calculate_strategy_diversity_bonus(episode)
-
-        # Combine rewards
-        total_reward = (defender_payoff +
-                        self.config.reward_weights.beta_ext * ext_reward +
-                        self.config.reward_weights.beta_int * int_reward +
-                        shaping_reward +
-                        strategy_diversity_bonus)
-
-        return {
-            'total_reward': total_reward,
-            'defender_payoff': defender_payoff,
-            'extrinsic_reward': ext_reward,
-            'intrinsic_reward': int_reward,
-            'shaping_reward': shaping_reward,
-            'strategy_bonus': strategy_diversity_bonus,
-            'outcome': outcome,
-            'attacker_action': attacker_action,
-            'current_risk': self.reward_calc._calculate_cyber_physical_risk(next_state, attacker_action)
-        }
-
     def _calculate_strategy_diversity_bonus(self, episode):
         """Calculate bonus for maintaining strategic diversity."""
         if episode < 10:
@@ -163,99 +121,89 @@ class FictitiousSelfPlaySimulator:
 
     def run_simulation(self):
         """
-        Execute the enhanced FSP simulation with comprehensive data collection.
+        运行仿真主循环。
+        此版本已适配内部包含攻击者和奖励计算的增强版环境。
         """
+        # 从配置文件加载仿真参数
         sim_params = self.config.simulation
-        self.logger.info(f"Starting Enhanced FSP simulation for {sim_params.num_episodes} episodes.")
+        self.logger.info(f"开始仿真，共 {sim_params.num_episodes} 个回合。")
 
-        # Initialize metrics tracking
+        # 初始化用于存储高级指标的列表（当前版本暂时为空）
         convergence_metrics = []
         strategy_evolution = []
 
-        for episode in tqdm(range(sim_params.num_episodes), desc="FSP Training Progress"):
-            # Reset environment 
-            current_state = self.env.reset() if hasattr(self.env, 'reset') else np.zeros(
-                self.config.game_setup.num_defender_actions)
+        # 使用tqdm库创建进度条，迭代所有回合
+        for episode in tqdm(range(sim_params.num_episodes), desc="FSP 训练进度"):
+            # 1. 重置环境，获取初始状态
+            current_state = self.env.reset()
 
-            # Enhanced state representation
-            system_status = random.uniform(0, 1)  # Simulated system load
-            threat_level = self._assess_threat_level(episode)
-            resource_util = random.uniform(0.3, 0.9)  # Resource utilization
+            # 初始化回合结束标志
+            done = False
 
-            enhanced_state = self._get_enhanced_state(current_state, system_status, threat_level, resource_util)
-
-            episode_rewards = []
-            episode_actions = []
-
+            # 在当前回合内执行多个步骤
             for step in range(sim_params.max_steps_per_episode):
-                # FSP attacker strategy sampling
-                attacker_action = self._sample_attacker_strategy(episode)
+                # 2. 防御者Agent根据当前状态选择一个动作
+                defender_action = self.defender_agent.choose_action(current_state)
 
-                # Defender action selection
-                defender_action = self.defender_agent.choose_action(enhanced_state)
-                episode_actions.append((attacker_action, defender_action))
+                # 3. 环境执行步骤，仅传入防御者的动作
+                #    环境内部会自动处理攻击者的动作、计算奖励并返回所有信息
+                next_state, reward_info, done = self.env.step(defender_action)
 
-                # Environment step
-                outcome, next_base_state = self.env.step(attacker_action, defender_action)
+                # 4. 从环境返回的 `reward_info` 字典中提取关键信息
+                total_reward = reward_info['total_reward']
+                outcome = reward_info['outcome']
+                # 使用 .get() 安全地获取攻击者动作，因为它可能不存在（即没有发生攻击）
+                attacker_action = reward_info.get('attacker_action')
 
-                # Enhanced next state
-                next_enhanced_state = self._get_enhanced_state(
-                    next_base_state, system_status, threat_level, resource_util)
-
-                # Calculate comprehensive reward
-                reward_info = self._calculate_adaptive_reward(
-                    outcome, attacker_action, defender_action,
-                    enhanced_state, next_enhanced_state, episode)
-
-                episode_rewards.append(reward_info['total_reward'])
-
-                # Agent learning
+                # 5. 让防御者Agent根据经验进行学习
                 self.defender_agent.learn(
-                    enhanced_state, defender_action,
-                    reward_info['total_reward'], next_enhanced_state)
+                    current_state,
+                    defender_action,
+                    total_reward,
+                    next_state
+                )
 
-                # Data recording
+                # 6. 使用性能监视器记录此步骤的详细数据
                 self.monitor.record(
                     episode=episode,
                     step=step,
                     defender_action=defender_action,
                     attacker_action=attacker_action,
                     outcome=outcome,
-                    total_reward=reward_info['total_reward'],
-                    defender_payoff=reward_info['defender_payoff'],
-                    extrinsic_reward=reward_info['extrinsic_reward'],
-                    intrinsic_reward=reward_info['intrinsic_reward'],
-                    shaping_reward=reward_info['shaping_reward'],
-                    strategy_bonus=reward_info['strategy_bonus'],
-                    system_risk=reward_info['current_risk'],
+                    total_reward=total_reward,
+                    defender_payoff=reward_info.get('base_payoff'),
+                    system_risk=1 - reward_info.get('system_health', 1.0),  # 将健康度转化为风险值
                     epsilon=self.defender_agent.epsilon,
-                    threat_level=threat_level,
-                    system_status=system_status,
-                    resource_utilization=resource_util
                 )
 
-                # Update strategy histories
+                # 7. 更新用于分析的策略历史记录
                 self._update_strategy_history(episode, attacker_action, defender_action)
 
-                # State transition
-                enhanced_state = next_enhanced_state
+                # 8. 将状态更新为下一步的状态，准备下一次迭代
+                current_state = next_state
 
-            # Episode-level analysis
-            self._analyze_episode_convergence(episode, episode_rewards, episode_actions, convergence_metrics)
-            self._track_strategy_evolution(episode, episode_actions, strategy_evolution)
+                # 如果环境发出了结束信号，则提前终止当前回合
+                if done:
+                    break
 
-            # Decay exploration
+            # 9. 每个回合结束后，调用Agent的函数来降低探索率（epsilon）
             self.defender_agent.decay_epsilon()
 
-            # Periodic logging
-            if episode % 500 == 0:
-                self.logger.info(f"Episode {episode}: Avg Reward = {np.mean(episode_rewards):.4f}, "
-                                 f"Epsilon = {self.defender_agent.epsilon:.4f}")
+            # 10. 定期（每500个回合）打印日志，监控训练进展
+            if episode % 500 == 0 and episode > 0:
+                # 从已记录的数据中查询当前回合的奖励数据
+                recent_rewards = self.monitor.get_dataframe().query(f'episode == {episode}')['total_reward']
+                if not recent_rewards.empty:
+                    avg_reward = recent_rewards.mean()
+                    self.logger.info(f"回合 {episode}: 平均奖励 = {avg_reward:.4f}, "
+                                     f"Epsilon = {self.defender_agent.epsilon:.4f}")
 
-        self.logger.info("Enhanced FSP simulation completed.")
+        self.logger.info("FSP 仿真完成。")
 
-        # Add convergence and strategy evolution data to results
+        # 仿真结束后，获取所有记录的数据
         results_df = self.monitor.get_dataframe()
+
+        # 返回结果
         return results_df, convergence_metrics, strategy_evolution
 
     def _assess_threat_level(self, episode):
