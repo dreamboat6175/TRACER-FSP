@@ -52,5 +52,11 @@
     "strategy_memory_window": 100,
     "adaptive_exploration": true,
     "strategy_diversity_bonus": 0.1
+  },
+  "payoffs": {
+    "TP": { "attacker": -10, "defender": -15 },
+    "FP": { "attacker": 0, "defender": -25 },
+    "FN": { "attacker": 100, "defender": -100 },
+    "TN": { "attacker": 0, "defender": 5 }
   }
 }

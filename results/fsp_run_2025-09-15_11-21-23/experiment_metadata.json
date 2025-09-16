@@ -1,0 +1,8 @@
+{
+  "experiment_timestamp": "2025-09-15_11-21-23",
+  "total_episodes": 3000,
+  "total_steps": 150000,
+  "final_performance": -77.3552,
+  "convergence_achieved": false,
+  "config_hash": -1606635476703956576
+}

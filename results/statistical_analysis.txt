@@ -1,0 +1,30 @@
+============================================================
+TRACER-FSP STATISTICAL ANALYSIS REPORT
+============================================================
+
+1. BASIC PERFORMANCE STATISTICS
+----------------------------------------
+Total Episodes: 3000
+Total Steps: 150000
+Average Reward per Episode: -4001.2910
+Reward Standard Deviation: 339.5972
+
+2. SECURITY PERFORMANCE METRICS
+----------------------------------------
+FN: 94415 (62.94%)
+TP: 42021 (28.01%)
+TN: 11780 (7.85%)
+FP: 1784 (1.19%)
+
+Sensitivity (True Positive Rate): 0.3080
+Specificity (True Negative Rate): 0.8685
+Precision: 0.9593
+Recall: 0.3080
+F1-Score: 0.4663
+
+4. LEARNING EFFICIENCY
+----------------------------------------
+Early Performance (Episodes 0-500): -81.9097
+Late Performance (Last 500 episodes): -79.5692
+Performance Improvement: 2.3405
+Improvement Percentage: 2.86%
